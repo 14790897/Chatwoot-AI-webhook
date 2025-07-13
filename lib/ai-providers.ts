@@ -180,11 +180,19 @@ export async function callAIWithProvider(
   // Use provider URL or fallback to config URL
   const apiUrl = config.aiUrl || provider.baseUrl;
 
-  logger.info(`开始AI调用`, {
-    provider: provider.name,
-    model: process.env.AI_MODEL || provider.defaultModel,
-    messageLength: message.length,
-  }, 'ai_call');
+  logger.info(
+    `开始AI调用 | ${provider.name} ${
+      process.env.AI_MODEL || provider.defaultModel
+    } | 消息长度: ${message.length}字符`,
+    {
+      provider: provider.name,
+      model: process.env.AI_MODEL || provider.defaultModel,
+      messageLength: message.length,
+      messagePreview:
+        message.length > 50 ? message.substring(0, 50) + "..." : message,
+    },
+    "ai_call"
+  );
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     const attemptStart = Date.now();
@@ -209,7 +217,9 @@ export async function callAIWithProvider(
 
       if (!response.ok) {
         throw new Error(
-          `${provider.name} API错误 ${response.status}: ${response.statusText}\n${raw.slice(0, 200)}`
+          `${provider.name} API错误 ${response.status}: ${
+            response.statusText
+          }\n${raw.slice(0, 200)}`
         );
       }
 
@@ -221,42 +231,51 @@ export async function callAIWithProvider(
       }
 
       const content = provider.parseResponse(data);
-      if (!content || typeof content !== 'string') {
+      if (!content || typeof content !== "string") {
         throw new Error("AI返回了无效响应");
       }
 
       const totalDuration = Date.now() - startTime;
+      const trimmedContent = content.trim();
 
       // 记录成功的AI调用
       logger.logAICall(
         true,
         totalDuration,
         provider.name,
-        process.env.AI_MODEL || provider.defaultModel
+        process.env.AI_MODEL || provider.defaultModel,
+        undefined,
+        message.length,
+        trimmedContent.length
       );
 
-      return { success: true, content: content.trim() };
-
+      return { success: true, content: trimmedContent };
     } catch (error) {
       lastError = error as Error;
       const attemptDuration = Date.now() - attemptStart;
 
-      logger.warn(`${provider.name} 调用失败 (尝试 ${attempt}/${maxRetries})`, {
-        error: error.message,
-        attempt,
-        duration: attemptDuration,
-        provider: provider.name,
-      }, 'ai_call');
+      logger.warn(
+        `${provider.name} 调用失败 (尝试 ${attempt}/${maxRetries})`,
+        {
+          error: error.message,
+          attempt,
+          duration: attemptDuration,
+          provider: provider.name,
+        },
+        "ai_call"
+      );
 
       if (attempt < maxRetries) {
         const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
-        await new Promise(resolve => setTimeout(resolve, delay));
+        await new Promise((resolve) => setTimeout(resolve, delay));
       }
     }
   }
 
   const totalDuration = Date.now() - startTime;
-  const errorMessage = `${provider.name} 调用失败，已重试${maxRetries}次: ${lastError?.message || "未知错误"}`;
+  const errorMessage = `${provider.name} 调用失败，已重试${maxRetries}次: ${
+    lastError?.message || "未知错误"
+  }`;
 
   // 记录失败的AI调用
   logger.logAICall(
@@ -264,7 +283,8 @@ export async function callAIWithProvider(
     totalDuration,
     provider.name,
     process.env.AI_MODEL || provider.defaultModel,
-    errorMessage
+    errorMessage,
+    message.length
   );
 
   return {

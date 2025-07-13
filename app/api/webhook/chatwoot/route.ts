@@ -1,4 +1,4 @@
-import { type NextRequest, NextResponse } from "next/server"
+import { type NextRequest, NextResponse } from "next/server";
 import {
   WebhookPayload,
   MessageCreatedPayload,
@@ -70,6 +70,11 @@ export async function POST(request: NextRequest) {
     logger.info(`接收到webhook事件: ${body.event}`, {
       event: body.event,
       conversation_id: body.conversation?.id || body.id,
+      content: body.content || "无内容",
+      message_type: body.message_type,
+      sender: body.sender?.name || body.contact?.name || "未知用户",
+      inbox_id: body.inbox?.id,
+      account_id: body.account?.id,
     });
 
     // 验证请求格式

@@ -1,3 +1,4 @@
+# https://www.chatwoot.com/hc/user-guide/articles/1677693021-how-to-use-webhooks
 How to use webhooks?
 Last updated on May 09, 2025
 Webhooks are HTTP callbacks that are set up for each account. These are triggered when actions such as creating a message occur in Chatwoot. Multiple webhooks can be created for a single account.
