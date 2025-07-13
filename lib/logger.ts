@@ -161,6 +161,15 @@ class Logger {
           : data.content;
       const sender = data.sender?.name || data.contact?.name || "未知用户";
       messageDetail += ` | 用户: ${sender} | 内容: "${content}"`;
+
+      // 如果有AI响应，也显示响应信息
+      if (data.response?.success && data.response.message) {
+        const responsePreview =
+          data.response.message.length > 30
+            ? data.response.message.substring(0, 30) + "..."
+            : data.response.message;
+        messageDetail += ` | AI回复: "${responsePreview}"`;
+      }
     } else if (event === "conversation_created") {
       messageDetail += ` | 新会话创建`;
     } else if (event === "conversation_status_changed") {

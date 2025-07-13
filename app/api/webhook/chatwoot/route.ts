@@ -105,9 +105,16 @@ export async function POST(request: NextRequest) {
     // 记录处理结果
     const duration = Date.now() - startTime;
     if (response.success) {
-      logWebhookEvent(body.event, { response }, "info", duration);
+      logWebhookEvent(body.event, {
+        ...body,
+        response,
+        ai_response_length: response.message?.length
+      }, "info", duration);
     } else {
-      logWebhookEvent(body.event, { error: response.error }, "error", duration);
+      logWebhookEvent(body.event, {
+        ...body,
+        error: response.error
+      }, "error", duration);
     }
 
     return NextResponse.json(response, {
