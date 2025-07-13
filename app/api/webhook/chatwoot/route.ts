@@ -1,102 +1,288 @@
 import { type NextRequest, NextResponse } from "next/server"
+import {
+  WebhookPayload,
+  MessageCreatedPayload,
+  AIConfig,
+  WebhookResponse,
+  WebhookEventType,
+} from "@/types/chatwoot";
+import { callAIWithProvider, getAIProvider } from "@/lib/ai-providers";
+import { logger, withPerformanceLogging } from "@/lib/logger";
 
 // 从环境变量读取AI配置
-const getAIConfig = () => ({
+const getAIConfig = (): AIConfig => ({
   aiUrl: process.env.AI_API_URL,
   aiToken: process.env.AI_API_TOKEN,
-  systemPrompt: process.env.AI_SYSTEM_PROMPT || "你是一个专业的客服助手，请用友好、专业的语气回答用户问题。",
-})
+  systemPrompt:
+    process.env.AI_SYSTEM_PROMPT ||
+    "你是一个专业的客服助手，请用友好、专业的语气回答用户问题。",
+});
+
+// 使用新的日志系统替换原有的日志函数
+const logWebhookEvent = (
+  event: WebhookEventType,
+  data: any,
+  level: "info" | "error" | "warn" = "info",
+  duration?: number
+) => {
+  logger.logWebhookEvent(event, data, level, duration);
+};
+
+// 验证webhook payload
+const validateWebhookPayload = (
+  body: any
+): { isValid: boolean; error?: string } => {
+  if (!body || typeof body !== "object") {
+    return { isValid: false, error: "请求体必须是有效的JSON对象" };
+  }
+
+  if (!body.event) {
+    return { isValid: false, error: "缺少必需的 'event' 字段" };
+  }
+
+  const supportedEvents: WebhookEventType[] = [
+    "conversation_created",
+    "conversation_updated",
+    "conversation_status_changed",
+    "message_created",
+    "message_updated",
+    "webwidget_triggered",
+    "conversation_typing_on",
+    "conversation_typing_off",
+  ];
+
+  if (!supportedEvents.includes(body.event)) {
+    return { isValid: false, error: `不支持的事件类型: ${body.event}` };
+  }
+
+  return { isValid: true };
+};
 
 export async function POST(request: NextRequest) {
+  const startTime = Date.now();
+  let webhookPayload: WebhookPayload | null = null;
+
   try {
-    const body = await request.json()
+    const body = await request.json();
+    webhookPayload = body as WebhookPayload;
+
+    // 记录接收到的webhook事件
+    logger.info(`接收到webhook事件: ${body.event}`, {
+      event: body.event,
+      conversation_id: body.conversation?.id || body.id,
+    });
 
     // 验证请求格式
-    if (!body.content || !body.message_type) {
-      return NextResponse.json({ error: "无效的请求格式" }, { status: 400 })
+    const validation = validateWebhookPayload(body);
+    if (!validation.isValid) {
+      const duration = Date.now() - startTime;
+      logWebhookEvent(
+        body.event,
+        { error: validation.error },
+        "error",
+        duration
+      );
+      return NextResponse.json(
+        {
+          success: false,
+          error: validation.error,
+        },
+        { status: 400 }
+      );
     }
 
-    // 只处理用户发送的消息
-    if (body.message_type !== "incoming") {
-      return NextResponse.json({ message: "忽略非用户消息" })
+    // 根据事件类型处理
+    const response = await withPerformanceLogging(
+      handleWebhookEvent,
+      `处理${body.event}事件`
+    )(body as WebhookPayload);
+
+    // 记录处理结果
+    const duration = Date.now() - startTime;
+    if (response.success) {
+      logWebhookEvent(body.event, { response }, "info", duration);
+    } else {
+      logWebhookEvent(body.event, { error: response.error }, "error", duration);
     }
 
-    // 检查AI配置
-    const config = getAIConfig()
-    if (!config.aiUrl || !config.aiToken) {
-      return NextResponse.json({ error: "AI配置未完成，请检查环境变量 AI_API_URL 和 AI_API_TOKEN" }, { status: 500 })
-    }
-
-    // 调用自定义AI接口
-    const aiResponse = await callCustomAI(body.content, config)
-
-    if (!aiResponse.success) {
-      return NextResponse.json({ error: "AI调用失败", details: aiResponse.error }, { status: 500 })
-    }
-
-    // 返回符合Chatwoot格式的响应
-    return NextResponse.json({
-      success: true,
-      message: aiResponse.content,
-      conversation_id: body.conversation?.id,
-      timestamp: new Date().toISOString(),
-    })
+    return NextResponse.json(response, {
+      status: response.success ? 200 : 500,
+    });
   } catch (error) {
-    console.error("Webhook处理错误:", error)
-    return NextResponse.json({ error: "服务器内部错误", details: error.message }, { status: 500 })
+    const errorMessage = error instanceof Error ? error.message : "未知错误";
+    const duration = Date.now() - startTime;
+
+    logger.error("Webhook处理异常", {
+      error: errorMessage,
+      event: webhookPayload?.event,
+      duration,
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+
+    logWebhookEvent(
+      (webhookPayload?.event as WebhookEventType) || "message_created",
+      { error: errorMessage },
+      "error",
+      duration
+    );
+
+    return NextResponse.json(
+      {
+        success: false,
+        error: "服务器内部错误",
+        details: errorMessage,
+      },
+      { status: 500 }
+    );
   }
 }
 
-async function callCustomAI(userMessage: string, config: ReturnType<typeof getAIConfig>) {
-  try {
-    const response = await fetch(config.aiUrl!, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${config.aiToken}`,
-      },
-      body: JSON.stringify({
-        model: "gpt-3.5-turbo", // 根据你的AI接口调整
-        messages: [
-          { role: "system", content: config.systemPrompt },
-          { role: "user", content: userMessage },
-        ],
-        max_tokens: 1000,
-        temperature: 0.7,
-      }),
-    })
+// 处理不同类型的webhook事件
+async function handleWebhookEvent(
+  payload: WebhookPayload
+): Promise<WebhookResponse> {
+  const timestamp = new Date().toISOString();
 
-    const contentType = response.headers.get("content-type") || ""
-    const raw = await response.text()
+  switch (payload.event) {
+    case "message_created":
+      return await handleMessageCreated(payload as MessageCreatedPayload);
 
-    if (!response.ok) {
-      throw new Error(`AI接口返回错误 ${response.status}: ${response.statusText}\n${raw.slice(0, 200)}`)
-    }
+    case "conversation_created":
+      return {
+        success: true,
+        message: "会话已创建",
+        conversation_id: (payload as any).id,
+        timestamp,
+      };
 
-    // 如果是 JSON，解析并提取文本；否则直接返回文本
-    let aiText = raw
-    if (contentType.includes("application/json")) {
-      try {
-        const data = JSON.parse(raw)
-        aiText = data.choices?.[0]?.message?.content ?? data.response ?? data.text ?? raw
-      } catch {
-        // JSON 解析失败时保留原始文本
-      }
-    }
+    case "conversation_updated":
+      return {
+        success: true,
+        message: "会话已更新",
+        conversation_id: (payload as any).id,
+        timestamp,
+      };
 
-    return { success: true, content: aiText.trim() }
-  } catch (error) {
-    console.error("AI调用错误:", error)
-    return { success: false, error: (error as Error).message }
+    case "conversation_status_changed":
+      return {
+        success: true,
+        message: "会话状态已改变",
+        conversation_id: (payload as any).id,
+        timestamp,
+      };
+
+    case "message_updated":
+      return {
+        success: true,
+        message: "消息已更新",
+        conversation_id: (payload as any).conversation?.id,
+        timestamp,
+      };
+
+    case "webwidget_triggered":
+      return {
+        success: true,
+        message: "网页小部件已触发",
+        conversation_id: (payload as any).current_conversation?.id,
+        timestamp,
+      };
+
+    case "conversation_typing_on":
+    case "conversation_typing_off":
+      return {
+        success: true,
+        message: `用户${
+          payload.event === "conversation_typing_on" ? "开始" : "停止"
+        }输入`,
+        conversation_id: (payload as any).conversation?.id,
+        timestamp,
+      };
+
+    default:
+      return {
+        success: false,
+        error: `不支持的事件类型: ${(payload as any).event}`,
+        timestamp,
+      };
   }
+}
+
+// 处理消息创建事件
+async function handleMessageCreated(
+  payload: MessageCreatedPayload
+): Promise<WebhookResponse> {
+  const timestamp = new Date().toISOString();
+
+  // 只处理用户发送的消息
+  if (payload.message_type !== "incoming") {
+    return {
+      success: true,
+      message: "忽略非用户消息",
+      conversation_id: payload.conversation?.id,
+      timestamp,
+    };
+  }
+
+  // 检查AI配置
+  const config = getAIConfig();
+  if (!config.aiUrl || !config.aiToken) {
+    return {
+      success: false,
+      error: "AI配置未完成，请检查环境变量 AI_API_URL 和 AI_API_TOKEN",
+      conversation_id: payload.conversation?.id,
+      timestamp,
+    };
+  }
+
+  // 调用AI接口（支持多种提供商）
+  const aiResponse = await callAIWithProvider(payload.content, config);
+
+  if (!aiResponse.success) {
+    return {
+      success: false,
+      error: "AI调用失败",
+      details: aiResponse.error,
+      conversation_id: payload.conversation?.id,
+      timestamp,
+    };
+  }
+
+  return {
+    success: true,
+    message: aiResponse.content,
+    conversation_id: payload.conversation?.id,
+    timestamp,
+  };
 }
 
 export async function GET() {
-  const config = getAIConfig()
+  const config = getAIConfig();
+  const provider = getAIProvider();
+
   return NextResponse.json({
     configured: !!(config.aiUrl && config.aiToken),
     systemPrompt: config.systemPrompt,
     hasUrl: !!config.aiUrl,
     hasToken: !!config.aiToken,
-  })
+    provider: {
+      name: provider.name,
+      defaultModel: provider.defaultModel,
+      supportedModels: provider.supportedModels,
+    },
+    supportedEvents: [
+      "conversation_created",
+      "conversation_updated",
+      "conversation_status_changed",
+      "message_created",
+      "message_updated",
+      "webwidget_triggered",
+      "conversation_typing_on",
+      "conversation_typing_off",
+    ],
+    aiModel: process.env.AI_MODEL || provider.defaultModel,
+    maxTokens: parseInt(process.env.AI_MAX_TOKENS || "1000"),
+    temperature: parseFloat(process.env.AI_TEMPERATURE || "0.7"),
+    version: "2.0.0",
+    timestamp: new Date().toISOString(),
+  });
 }

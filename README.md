@@ -1,6 +1,15 @@
-# Chatwoot AI Webhook
+# Chatwoot AI Webhook v2.0
 
-一个用于连接Chatwoot智能客服与自定义AI的Webhook系统。
+一个功能强大的Chatwoot智能客服与AI服务集成系统，支持多种AI提供商、完整的事件处理和实时监控。
+
+## ✨ 主要特性
+
+- 🤖 **多AI提供商支持**: OpenAI、Azure OpenAI、智谱AI、百度文心一言、通义千问
+- 📊 **完整事件处理**: 支持所有Chatwoot webhook事件类型
+- 📈 **实时监控**: 内置日志系统和性能监控
+- 🔄 **智能重试**: 自动重试机制和错误恢复
+- 🎯 **类型安全**: 完整的TypeScript类型定义
+- 🚀 **高性能**: 优化的响应时间和资源使用
 
 ## 🚀 快速开始
 
@@ -13,7 +22,15 @@
 AI_API_URL=https://api.openai.com/v1/chat/completions
 AI_API_TOKEN=sk-your-api-token-here
 
-# 可选配置
+# AI提供商配置 (可选，系统会自动检测)
+AI_PROVIDER=openai  # openai, azure, zhipu, baidu, qwen
+
+# AI模型配置 (可选)
+AI_MODEL=gpt-3.5-turbo
+AI_MAX_TOKENS=1000
+AI_TEMPERATURE=0.7
+
+# 系统提示词 (可选)
 AI_SYSTEM_PROMPT=你是一个专业的客服助手，请用友好、专业的语气回答用户问题。
 \`\`\`
 
