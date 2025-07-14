@@ -22,6 +22,14 @@ export async function GET() {
       systemPrompt: process.env.AI_SYSTEM_PROMPT || "使用默认提示词",
     },
     provider: getAIProvider(),
+    // 添加Chatwoot账户信息说明
+    chatwootInfo: {
+      note: "Account ID 来自 Chatwoot webhook payload",
+      explanation: "当 Chatwoot 发送 webhook 时，会在 payload.account.id 中包含账户ID",
+      apiPathFormat: "/api/v1/accounts/{account_id}/conversations/{conversation_id}/messages",
+      yourChatwootUrl: process.env.CHATWOOT_URL,
+      expectedAccountId: "通常是 1（如果只有一个账户）",
+    },
   };
 
   return NextResponse.json(diagnostics);
