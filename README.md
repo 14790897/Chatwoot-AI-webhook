@@ -32,6 +32,10 @@ AI_TEMPERATURE=0.7
 
 # 系统提示词 (可选)
 AI_SYSTEM_PROMPT=你是一个专业的客服助手，请用友好、专业的语气回答用户问题。
+
+# Chatwoot配置 - 用于发送AI回复到聊天界面
+CHATWOOT_URL=https://your-chatwoot-instance.com
+CHATWOOT_BOT_TOKEN=your-bot-access-token
 \`\`\`
 
 ### 2. 启动服务
@@ -43,10 +47,24 @@ npm run dev
 
 ### 3. 配置Chatwoot
 
-1. 在Chatwoot管理后台进入 Settings → Integrations → Webhooks
-2. 添加新的webhook：`https://your-domain.com/api/webhook/chatwoot`
-3. 选择触发事件："Message Created"
-4. 保存配置
+#### 步骤1：创建Bot用户（用于发送AI回复）
+1. 在Chatwoot管理后台进入 Settings → Agents
+2. 点击 "Add Agent" 创建一个新的代理用户
+3. 设置用户名为 "AI Assistant" 或类似名称
+4. 记录该用户的邮箱，稍后需要用到
+
+#### 步骤2：获取Bot Access Token
+1. 进入 Settings → Integrations → API
+2. 点击 "Add API Key"
+3. 选择刚创建的Bot用户
+4. 复制生成的Access Token，这就是 `CHATWOOT_BOT_TOKEN`
+
+#### 步骤3：配置Webhook
+1. 进入 Settings → Integrations → Webhooks
+2. 点击 "Add new webhook"
+3. 输入webhook URL：`https://your-domain.com/api/webhook/chatwoot`
+4. 选择触发事件："Message Created"
+5. 保存配置
 
 ## 📋 支持的AI接口
 

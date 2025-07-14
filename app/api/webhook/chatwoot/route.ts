@@ -105,16 +105,26 @@ export async function POST(request: NextRequest) {
     // 记录处理结果
     const duration = Date.now() - startTime;
     if (response.success) {
-      logWebhookEvent(body.event, {
-        ...body,
-        response,
-        ai_response_length: response.message?.length
-      }, "info", duration);
+      logWebhookEvent(
+        body.event,
+        {
+          ...body,
+          response,
+          ai_response_length: response.message?.length,
+        },
+        "info",
+        duration
+      );
     } else {
-      logWebhookEvent(body.event, {
-        ...body,
-        error: response.error
-      }, "error", duration);
+      logWebhookEvent(
+        body.event,
+        {
+          ...body,
+          error: response.error,
+        },
+        "error",
+        duration
+      );
     }
 
     return NextResponse.json(response, {
@@ -219,6 +229,104 @@ async function handleWebhookEvent(
   }
 }
 
+// 发送消息到 Chatwoot
+async function sendMessageToChatwoot(
+  conversationId: number,
+  message: string,
+  accountId: number
+): Promise<boolean> {
+  try {
+    const chatwootUrl = process.env.CHATWOOT_URL;
+    const chatwootToken = process.env.CHATWOOT_BOT_TOKEN;
+
+    if (!chatwootUrl || !chatwootToken) {
+      logger.warn("Chatwoot配置缺失", {
+        hasUrl: !!chatwootUrl,
+        hasToken: !!chatwootToken,
+        conversationId,
+        accountId,
+      });
+      return false;
+    }
+
+    // 验证URL格式
+    const apiUrl = `${chatwootUrl.replace(
+      /\/$/,
+      ""
+    )}/api/v1/accounts/${accountId}/conversations/${conversationId}/messages`;
+
+    logger.debug("准备发送消息到Chatwoot", {
+      apiUrl,
+      conversationId,
+      accountId,
+      messageLength: message.length,
+    });
+
+    const requestBody = {
+      content: message,
+      message_type: "outgoing",
+      private: false,
+    };
+
+    const response = await fetch(apiUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        api_access_token: chatwootToken,
+        "User-Agent": "Chatwoot-AI-Webhook/2.0",
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      let errorDetails = "";
+      try {
+        const errorData = await response.json();
+        errorDetails = JSON.stringify(errorData);
+      } catch {
+        errorDetails = await response.text();
+      }
+
+      logger.error("发送消息到Chatwoot失败", {
+        status: response.status,
+        statusText: response.statusText,
+        errorDetails,
+        conversationId,
+        accountId,
+        apiUrl,
+        requestBody,
+      });
+      return false;
+    }
+
+    const result = await response.json();
+    logger.info("成功发送消息到Chatwoot", {
+      conversationId,
+      accountId,
+      messageId: result.id,
+      messageLength: message.length,
+      responseData: {
+        id: result.id,
+        created_at: result.created_at,
+        message_type: result.message_type,
+      },
+    });
+
+    return true;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : undefined;
+
+    logger.error("发送消息到Chatwoot异常", {
+      error: errorMessage,
+      stack: errorStack,
+      conversationId,
+      accountId,
+    });
+    return false;
+  }
+}
+
 // 处理消息创建事件
 async function handleMessageCreated(
   payload: MessageCreatedPayload
@@ -259,6 +367,36 @@ async function handleMessageCreated(
     };
   }
 
+  // 发送AI回复到Chatwoot
+  const conversationId = payload.conversation?.id;
+  const accountId = payload.account?.id;
+
+  if (conversationId && accountId) {
+    const sent = await sendMessageToChatwoot(
+      conversationId,
+      aiResponse.content!,
+      accountId
+    );
+
+    if (sent) {
+      logger.info("AI回复已发送到聊天界面", {
+        conversationId,
+        accountId,
+        responseLength: aiResponse.content!.length,
+      });
+    } else {
+      logger.warn("AI回复发送失败，但webhook处理成功", {
+        conversationId,
+        accountId,
+      });
+    }
+  } else {
+    logger.warn("缺少必要信息，无法发送回复", {
+      hasConversationId: !!conversationId,
+      hasAccountId: !!accountId,
+    });
+  }
+
   return {
     success: true,
     message: aiResponse.content,
@@ -276,6 +414,22 @@ export async function GET() {
     systemPrompt: config.systemPrompt,
     hasUrl: !!config.aiUrl,
     hasToken: !!config.aiToken,
+    chatwoot: {
+      configured: !!(
+        process.env.CHATWOOT_URL && process.env.CHATWOOT_BOT_TOKEN
+      ),
+      hasUrl: !!process.env.CHATWOOT_URL,
+      hasToken: !!process.env.CHATWOOT_BOT_TOKEN,
+      canSendReplies: !!(
+        process.env.CHATWOOT_URL && process.env.CHATWOOT_BOT_TOKEN
+      ),
+      url: process.env.CHATWOOT_URL
+        ? `${process.env.CHATWOOT_URL.replace(
+            /\/$/,
+            ""
+          )}/api/v1/accounts/[account_id]/conversations/[conversation_id]/messages`
+        : "未配置",
+    },
     provider: {
       name: provider.name,
       defaultModel: provider.defaultModel,

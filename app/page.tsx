@@ -259,7 +259,7 @@ export default function WebhookDashboard() {
                   <div className="space-y-4">
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <Label>配置状态</Label>
+                        <Label>AI配置状态</Label>
                         <div className="flex items-center gap-2">
                           {config.configured ? (
                             <CheckCircle className="w-4 h-4 text-green-500" />
@@ -271,15 +271,58 @@ export default function WebhookDashboard() {
                               config.configured ? "default" : "destructive"
                             }
                           >
-                            {config.configured ? "已配置" : "未配置"}
+                            {config.configured ? "AI已配置" : "AI未配置"}
                           </Badge>
                         </div>
                       </div>
 
                       <div className="space-y-2">
+                        <Label>Chatwoot回复</Label>
+                        <div className="flex items-center gap-2">
+                          {config.chatwoot?.canSendReplies ? (
+                            <CheckCircle className="w-4 h-4 text-green-500" />
+                          ) : (
+                            <XCircle className="w-4 h-4 text-red-500" />
+                          )}
+                          <Badge
+                            variant={
+                              config.chatwoot?.canSendReplies
+                                ? "default"
+                                : "destructive"
+                            }
+                          >
+                            {config.chatwoot?.canSendReplies
+                              ? "可发送回复"
+                              : "无法发送回复"}
+                          </Badge>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
                         <Label>AI提供商</Label>
                         <Badge variant="outline">
                           {config.provider?.name || "未知"}
+                        </Badge>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>系统状态</Label>
+                        <Badge
+                          variant={
+                            config.configured && config.chatwoot?.canSendReplies
+                              ? "default"
+                              : config.configured
+                              ? "secondary"
+                              : "destructive"
+                          }
+                        >
+                          {config.configured && config.chatwoot?.canSendReplies
+                            ? "完全配置"
+                            : config.configured
+                            ? "部分配置"
+                            : "未配置"}
                         </Badge>
                       </div>
                     </div>
@@ -320,6 +363,54 @@ export default function WebhookDashboard() {
                           支持的模型:{" "}
                           {config.provider?.supportedModels?.join(", ")}
                         </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Chatwoot集成状态</Label>
+                      <div className="bg-gray-50 p-3 rounded-lg space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span>Chatwoot URL:</span>
+                          <Badge
+                            variant={
+                              config.chatwoot?.hasUrl
+                                ? "default"
+                                : "destructive"
+                            }
+                          >
+                            {config.chatwoot?.hasUrl ? "已配置" : "未配置"}
+                          </Badge>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Bot Token:</span>
+                          <Badge
+                            variant={
+                              config.chatwoot?.hasToken
+                                ? "default"
+                                : "destructive"
+                            }
+                          >
+                            {config.chatwoot?.hasToken ? "已配置" : "未配置"}
+                          </Badge>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>自动回复:</span>
+                          <Badge
+                            variant={
+                              config.chatwoot?.canSendReplies
+                                ? "default"
+                                : "destructive"
+                            }
+                          >
+                            {config.chatwoot?.canSendReplies ? "启用" : "禁用"}
+                          </Badge>
+                        </div>
+                        {!config.chatwoot?.canSendReplies && (
+                          <div className="text-xs text-orange-600 mt-2">
+                            ⚠️ 需要配置 CHATWOOT_URL 和 CHATWOOT_BOT_TOKEN
+                            才能自动发送AI回复到聊天界面
+                          </div>
+                        )}
                       </div>
                     </div>
 
