@@ -42,6 +42,9 @@ export default function WebhookDashboard() {
   const [selectedEvent, setSelectedEvent] = useState("message_created");
   const [isLoadingConfig, setIsLoadingConfig] = useState(true);
 
+  const [aiTestResult, setAiTestResult] = useState<any>(null);
+  const [isTestingAi, setIsTestingAi] = useState(false);
+
   const webhookUrl =
     typeof window !== "undefined"
       ? `${window.location.origin}/api/webhook/chatwoot`
@@ -124,7 +127,7 @@ export default function WebhookDashboard() {
       setTestResult({
         success: false,
         error: "测试失败",
-        details: error.message,
+        details: error instanceof Error ? error.message : String(error),
       });
     } finally {
       setIsLoading(false);
@@ -133,6 +136,59 @@ export default function WebhookDashboard() {
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
+  };
+
+  // AI回复测试函数
+  const testAiReply = async () => {
+    setIsTestingAi(true);
+    setAiTestResult(null);
+
+    try {
+      // 构造一个完整的message_created测试负载
+      const payload = {
+        event: "message_created",
+        id: Math.floor(Math.random() * 1000),
+        content: testMessage,
+        message_type: "incoming",
+        content_type: "text",
+        content_attributes: {},
+        source_id: "debug-test",
+        sender: { id: 999, name: "调试用户", type: "contact" },
+        contact: { id: 999, name: "调试用户" },
+        conversation: { id: 999, display_id: 999 },
+        account: { id: 1, name: "调试账户" },
+        inbox: { id: 1, name: "调试收件箱" },
+        created_at: new Date().toISOString(),
+      };
+
+      console.log("发送AI回复测试请求:", payload);
+
+      const response = await fetch("/api/webhook/chatwoot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const result = await response.json();
+      console.log("AI回复测试结果:", result);
+
+      setAiTestResult({
+        ...result,
+        requestPayload: payload,
+        status: response.status,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error("AI回复测试失败:", error);
+      setAiTestResult({
+        success: false,
+        error: "AI回复测试失败",
+        details: error instanceof Error ? error.message : String(error),
+        timestamp: new Date().toISOString(),
+      });
+    } finally {
+      setIsTestingAi(false);
+    }
   };
 
   return (
@@ -514,6 +570,15 @@ export default function WebhookDashboard() {
                   {isLoading ? "测试中..." : `测试 ${selectedEvent} 事件`}
                 </Button>
 
+                <Button
+                  onClick={testAiReply}
+                  disabled={isTestingAi}
+                  variant="outline"
+                  className="w-full"
+                >
+                  {isTestingAi ? "AI回复测试中..." : "测试AI回复"}
+                </Button>
+
                 {testResult && (
                   <div className="space-y-4">
                     <div className="flex items-center gap-2">
@@ -562,6 +627,62 @@ export default function WebhookDashboard() {
                       <div className="bg-gray-50 p-3 rounded-lg">
                         <pre className="text-xs overflow-auto max-h-40">
                           {JSON.stringify(testResult, null, 2)}
+                        </pre>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {aiTestResult && (
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2">
+                      <Label>AI回复测试结果</Label>
+                      <Badge
+                        variant={
+                          aiTestResult.success ? "default" : "destructive"
+                        }
+                      >
+                        {aiTestResult.success ? "成功" : "失败"}
+                      </Badge>
+                      {aiTestResult.status && (
+                        <Badge variant="outline">
+                          HTTP {aiTestResult.status}
+                        </Badge>
+                      )}
+                    </div>
+
+                    {aiTestResult.success && aiTestResult.message && (
+                      <div className="space-y-2">
+                        <Label className="text-sm">AI响应内容</Label>
+                        <div className="bg-green-50 border border-green-200 p-3 rounded-lg">
+                          <p className="text-sm text-green-800">
+                            {aiTestResult.message}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {aiTestResult.error && (
+                      <div className="space-y-2">
+                        <Label className="text-sm">错误信息</Label>
+                        <div className="bg-red-50 border border-red-200 p-3 rounded-lg">
+                          <p className="text-sm text-red-800">
+                            {aiTestResult.error}
+                          </p>
+                          {aiTestResult.details && (
+                            <p className="text-xs text-red-600 mt-1">
+                              {aiTestResult.details}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="space-y-2">
+                      <Label className="text-sm">完整响应</Label>
+                      <div className="bg-gray-50 p-3 rounded-lg">
+                        <pre className="text-xs overflow-auto max-h-40">
+                          {JSON.stringify(aiTestResult, null, 2)}
                         </pre>
                       </div>
                     </div>

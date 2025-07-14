@@ -75,6 +75,16 @@ export async function POST(request: NextRequest) {
       sender: body.sender?.name || body.contact?.name || "未知用户",
       inbox_id: body.inbox?.id,
       account_id: body.account?.id,
+      // 添加详细的ID调试信息
+      debug_ids: {
+        message_id: body.id,
+        conversation_id: body.conversation?.id,
+        conversation_display_id: body.conversation?.display_id,
+        account_id: body.account?.id,
+        contact_id: body.contact?.id || body.sender?.id,
+        inbox_id: body.inbox?.id,
+        sender_id: body.sender?.id,
+      },
     });
 
     // 验证请求格式
@@ -255,7 +265,7 @@ async function sendMessageToChatwoot(
       ""
     )}/api/v1/accounts/${accountId}/conversations/${conversationId}/messages`;
 
-    logger.debug("准备发送消息到Chatwoot", {
+    logger.info("准备发送消息到Chatwoot", {
       apiUrl,
       conversationId,
       accountId,
@@ -371,7 +381,22 @@ async function handleMessageCreated(
   const conversationId = payload.conversation?.id;
   const accountId = payload.account?.id;
 
+  // 调试：显示获取到的ID
+  console.log("🆔 获取到的ID信息:", {
+    accountId,
+    conversationId,
+    accountInfo: payload.account,
+    conversationInfo: payload.conversation,
+  });
+
   if (conversationId && accountId) {
+    logger.info("准备发送AI回复", {
+      conversationId,
+      accountId,
+      responseLength: aiResponse.content!.length,
+      aiContent: aiResponse.content!.substring(0, 100) + "...", // 显示前100个字符
+    });
+
     const sent = await sendMessageToChatwoot(
       conversationId,
       aiResponse.content!,
@@ -379,21 +404,27 @@ async function handleMessageCreated(
     );
 
     if (sent) {
-      logger.info("AI回复已发送到聊天界面", {
+      logger.info("AI回复已成功发送到聊天界面", {
         conversationId,
         accountId,
         responseLength: aiResponse.content!.length,
       });
     } else {
-      logger.warn("AI回复发送失败，但webhook处理成功", {
+      logger.error("AI回复发送失败！请检查Chatwoot配置", {
         conversationId,
         accountId,
+        chatwootUrl: process.env.CHATWOOT_URL,
+        hasToken: !!process.env.CHATWOOT_BOT_TOKEN,
+        aiResponseLength: aiResponse.content!.length,
       });
     }
   } else {
-    logger.warn("缺少必要信息，无法发送回复", {
+    logger.error("缺少必要信息，无法发送回复", {
       hasConversationId: !!conversationId,
       hasAccountId: !!accountId,
+      conversationId,
+      accountId,
+      payloadKeys: Object.keys(payload),
     });
   }
 
